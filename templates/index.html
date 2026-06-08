@@ -130,7 +130,7 @@
     </div>
 
     <!-- PST Panel -->
-    <div class="tab-panel {% if not gst_result and not gst_error %}active{% elif pst_result or pst_error %}active{% endif %}" id="panel-pst">
+    <div class="tab-panel {% if not gst_result and not gst_error and not qst_result and not qst_error %}active{% elif pst_result or pst_error %}active{% endif %}" id="panel-pst">
       <p class="subtitle">Quarters: Q1 Mar–May &nbsp;|&nbsp; Q2 Jun–Aug &nbsp;|&nbsp; Q3 Sep–Nov &nbsp;|&nbsp; Q4 Dec–Feb</p>
       <form method="POST" enctype="multipart/form-data">
         <input type="hidden" name="calc_type" value="pst"/>
