@@ -121,10 +121,12 @@
     <h1>CA Tax Calculator</h1>
 
     <div class="tabs">
-      <button class="tab-btn {% if not gst_result and not gst_error %}active{% elif pst_result or pst_error %}active{% endif %}"
+      <button class="tab-btn {% if not gst_result and not gst_error and not qst_result and not qst_error %}active{% elif pst_result or pst_error %}active{% endif %}"
               onclick="switchTab('pst', this)" id="tab-pst">PST (BC)</button>
       <button class="tab-btn {% if gst_result or gst_error %}active{% endif %}"
               onclick="switchTab('gst', this)" id="tab-gst">GST / HST</button>
+      <button class="tab-btn {% if qst_result or qst_error %}active{% endif %}"
+              onclick="switchTab('qst', this)" id="tab-qst">QST</button>
     </div>
 
     <!-- PST Panel -->
@@ -223,6 +225,47 @@
       {% endif %}
     </div>
   </div>
+
+    <!-- QST Panel -->
+    <div class="tab-panel {% if qst_result or qst_error %}active{% endif %}" id="panel-qst">
+      <p class="subtitle">Annual calculation — upload your full-year Amazon tax report CSV.</p>
+      <form method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="calc_type" value="qst"/>
+        <div class="upload-area" onclick="document.getElementById('qst_file').click()">
+          <label>
+            <div class="upload-icon">📂</div>
+            <div class="upload-text"><span>Click to upload</span> or drag and drop</div>
+            <div class="upload-text">Amazon tax report CSV</div>
+          </label>
+          <input type="file" id="qst_file" name="csv_file" accept=".csv"
+                 onchange="document.getElementById('qst-fn').textContent = this.files[0]?.name || ''"/>
+          <div class="filename-display" id="qst-fn">{% if qst_result %}{{ qst_result.filename }}{% endif %}</div>
+        </div>
+        <button type="submit">Calculate QST</button>
+      </form>
+
+      {% if qst_error %}<div class="error">{{ qst_error }}</div>{% endif %}
+
+      {% if qst_result %}
+      <div class="result">
+        <h2>Results — {{ qst_result.filename }}</h2>
+        <div class="result-grid">
+          <div class="result-row">
+            <span class="result-label">Period</span>
+            <span class="result-value">Jan – Dec {{ qst_result.year }}</span>
+          </div>
+          <div class="result-row highlight">
+            <span class="result-label">Total Sales (excl. tax)</span>
+            <span class="result-value money">CAD {{ "{:,.2f}".format(qst_result.sales) }}</span>
+          </div>
+          <div class="result-row highlight">
+            <span class="result-label">QST Collected</span>
+            <span class="result-value money">CAD {{ "{:,.2f}".format(qst_result.qst) }}</span>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+    </div>
 
   <script>
     function switchTab(name, btn) {

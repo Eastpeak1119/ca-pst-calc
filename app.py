@@ -64,12 +64,20 @@ def quarter_label(year, quarter, quarters):
     e = pd.Timestamp(year, end_month, 1).strftime('%b')
     return f"{s} – {e} {year}"
 
+def detect_year(df):
+    dates = pd.to_datetime(df['Shipment_Date'].str.replace(r'\+.*', '', regex=True), errors='coerce').dropna()
+    if dates.empty:
+        return None
+    return int(dates.dt.year.mode()[0])
+
 @app.route('/', methods=['GET', 'POST'])
 def index():
     pst_result = None
     gst_result = None
+    qst_result = None
     pst_error = None
     gst_error = None
+    qst_error = None
 
     if request.method == 'POST':
         calc_type = request.form.get('calc_type')
@@ -79,8 +87,10 @@ def index():
             error_msg = 'Please upload a CSV file.'
             if calc_type == 'pst':
                 pst_error = error_msg
-            else:
+            elif calc_type == 'gst':
                 gst_error = error_msg
+            else:
+                qst_error = error_msg
         else:
             try:
                 df = pd.read_csv(file, encoding='latin1')
@@ -120,18 +130,37 @@ def index():
                         ]
                         sales = fil['TaxExclusive_Selling_Price'].sum()
                         gst = fil['Tax_Amount'].sum()
-                        qst_fil = df[
-                            (df['Shipment_Date'] >= start) &
-                            (df['Shipment_Date'] <= end) &
-                            (df['Tax_Type'] == 'Quebec Sales Tax (VAT)')
-                        ]
-                        qst = qst_fil['Tax_Amount'].sum()
                         gst_result = {
                             'year': year,
                             'quarter': quarter,
                             'period': quarter_label(year, quarter, GST_QUARTERS),
                             'sales': round(sales, 2),
                             'gst': round(gst, 2),
+                            'filename': file.filename,
+                        }
+
+                elif calc_type == 'qst':
+                    year = detect_year(df)
+                    if year is None:
+                        qst_error = 'Could not detect dates from the file.'
+                    else:
+                        start = f"{year}-01-01+00:00"
+                        end = f"{year}-12-31+00:00"
+                        gst_fil = df[
+                            (df['Shipment_Date'] >= start) &
+                            (df['Shipment_Date'] <= end) &
+                            (df['Tax_Type'] == 'GST/HST')
+                        ]
+                        qst_fil = df[
+                            (df['Shipment_Date'] >= start) &
+                            (df['Shipment_Date'] <= end) &
+                            (df['Tax_Type'] == 'Quebec Sales Tax (VAT)')
+                        ]
+                        sales = gst_fil['TaxExclusive_Selling_Price'].sum()
+                        qst = qst_fil['Tax_Amount'].sum()
+                        qst_result = {
+                            'year': year,
+                            'sales': round(sales, 2),
                             'qst': round(qst, 2),
                             'filename': file.filename,
                         }
@@ -140,12 +169,15 @@ def index():
                 error_msg = f'Error processing file: {str(e)}'
                 if calc_type == 'pst':
                     pst_error = error_msg
-                else:
+                elif calc_type == 'gst':
                     gst_error = error_msg
+                else:
+                    qst_error = error_msg
 
     return render_template('index.html',
                            pst_result=pst_result, pst_error=pst_error,
-                           gst_result=gst_result, gst_error=gst_error)
+                           gst_result=gst_result, gst_error=gst_error,
+                           qst_result=qst_result, qst_error=qst_error)
 
 if __name__ == '__main__':
     app.run(debug=True)
