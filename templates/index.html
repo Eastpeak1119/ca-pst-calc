@@ -214,12 +214,6 @@
             <span class="result-label">GST / HST Collected</span>
             <span class="result-value money">CAD {{ "{:,.2f}".format(gst_result.gst) }}</span>
           </div>
-          {% if gst_result.qst > 0 %}
-          <div class="result-row highlight">
-            <span class="result-label">QST Collected</span>
-            <span class="result-value money">CAD {{ "{:,.2f}".format(gst_result.qst) }}</span>
-          </div>
-          {% endif %}
         </div>
       </div>
       {% endif %}
