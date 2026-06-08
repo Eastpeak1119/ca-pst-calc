@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>PST Calculator</title>
+  <title>CA Tax Calculator</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -21,27 +21,46 @@
       box-shadow: 0 2px 16px rgba(0,0,0,0.08);
       padding: 40px;
       width: 100%;
-      max-width: 520px;
+      max-width: 560px;
     }
-    h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 8px; color: #1a1a2e; }
-    p.subtitle { font-size: 0.875rem; color: #666; margin-bottom: 32px; }
+    h1 { font-size: 1.5rem; font-weight: 700; color: #1a1a2e; margin-bottom: 24px; }
+
+    /* Tabs */
+    .tabs { display: flex; border-bottom: 2px solid #e5e7eb; margin-bottom: 28px; }
+    .tab-btn {
+      padding: 10px 24px;
+      border: none;
+      background: none;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #888;
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -2px;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .tab-btn.active { color: #4f6ef7; border-bottom-color: #4f6ef7; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .subtitle { font-size: 0.875rem; color: #666; margin-bottom: 24px; }
 
     .upload-area {
       border: 2px dashed #d0d5dd;
       border-radius: 8px;
-      padding: 32px;
+      padding: 28px;
       text-align: center;
       cursor: pointer;
       transition: border-color 0.2s;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
     }
     .upload-area:hover { border-color: #4f6ef7; }
     .upload-area input[type="file"] { display: none; }
     .upload-area label { cursor: pointer; display: block; }
     .upload-icon { font-size: 2rem; margin-bottom: 8px; }
-    .upload-text { font-size: 0.9rem; color: #555; }
+    .upload-text { font-size: 0.875rem; color: #555; }
     .upload-text span { color: #4f6ef7; font-weight: 600; }
-    #filename-display { font-size: 0.8rem; color: #888; margin-top: 8px; }
+    .filename-display { font-size: 0.8rem; color: #888; margin-top: 8px; min-height: 1.2em; }
 
     button[type="submit"] {
       width: 100%;
@@ -63,28 +82,26 @@
       color: #cc0000;
       padding: 12px 16px;
       border-radius: 8px;
-      margin-top: 24px;
+      margin-top: 20px;
       font-size: 0.875rem;
     }
 
     .result {
-      margin-top: 32px;
+      margin-top: 28px;
       border-top: 1px solid #eee;
-      padding-top: 24px;
+      padding-top: 20px;
     }
-    .result h2 { font-size: 1rem; color: #888; font-weight: 500; margin-bottom: 16px; }
-    .result-grid { display: grid; gap: 12px; }
+    .result h2 { font-size: 0.875rem; color: #888; font-weight: 500; margin-bottom: 14px; }
+    .result-grid { display: grid; gap: 10px; }
     .result-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 12px 16px;
+      padding: 11px 14px;
       background: #f7f8fc;
       border-radius: 8px;
     }
-    .result-row.highlight {
-      background: #eef1ff;
-    }
+    .result-row.highlight { background: #eef1ff; }
     .result-label { font-size: 0.875rem; color: #555; }
     .result-value { font-size: 1rem; font-weight: 700; color: #1a1a2e; }
     .result-value.money { color: #2a7d4f; }
@@ -101,50 +118,119 @@
 </head>
 <body>
   <div class="card">
-    <h1>PST Calculator</h1>
-    <p class="subtitle">Upload your Amazon tax CSV to calculate BC PST and quarterly sales.</p>
+    <h1>CA Tax Calculator</h1>
 
-    <form method="POST" enctype="multipart/form-data">
-      <div class="upload-area" onclick="document.getElementById('csv_file').click()">
-        <label>
-          <div class="upload-icon">📂</div>
-          <div class="upload-text"><span>Click to upload</span> or drag and drop</div>
-          <div class="upload-text">Amazon tax report CSV</div>
-        </label>
-        <input type="file" id="csv_file" name="csv_file" accept=".csv"
-               onchange="document.getElementById('filename-display').textContent = this.files[0]?.name || ''"/>
-        <div id="filename-display"></div>
-      </div>
-      <button type="submit">Calculate</button>
-    </form>
-
-    {% if error %}
-    <div class="error">{{ error }}</div>
-    {% endif %}
-
-    {% if result %}
-    <div class="result">
-      <h2>Results — {{ result.filename }}</h2>
-      <div class="result-grid">
-        <div class="result-row">
-          <span class="result-label">Period</span>
-          <span class="result-value">{{ result.period }}</span>
-        </div>
-        <div class="result-row">
-          <span class="result-label">Quarter</span>
-          <span class="result-value"><span class="badge">Q{{ result.quarter }} {{ result.year }}</span></span>
-        </div>
-        <div class="result-row highlight">
-          <span class="result-label">Total Sales (excl. tax)</span>
-          <span class="result-value money">CAD {{ "{:,.2f}".format(result.sales) }}</span>
-        </div>
-        <div class="result-row highlight">
-          <span class="result-label">PST Collectable</span>
-          <span class="result-value money">CAD {{ "{:,.2f}".format(result.pst) }}</span>
-        </div>
-      </div>
+    <div class="tabs">
+      <button class="tab-btn {% if not gst_result and not gst_error %}active{% elif pst_result or pst_error %}active{% endif %}"
+              onclick="switchTab('pst', this)" id="tab-pst">PST (BC)</button>
+      <button class="tab-btn {% if gst_result or gst_error %}active{% endif %}"
+              onclick="switchTab('gst', this)" id="tab-gst">GST / HST</button>
     </div>
-    {% endif %}
+
+    <!-- PST Panel -->
+    <div class="tab-panel {% if not gst_result and not gst_error %}active{% elif pst_result or pst_error %}active{% endif %}" id="panel-pst">
+      <p class="subtitle">Quarters: Q1 Mar–May &nbsp;|&nbsp; Q2 Jun–Aug &nbsp;|&nbsp; Q3 Sep–Nov &nbsp;|&nbsp; Q4 Dec–Feb</p>
+      <form method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="calc_type" value="pst"/>
+        <div class="upload-area" onclick="document.getElementById('pst_file').click()">
+          <label>
+            <div class="upload-icon">📂</div>
+            <div class="upload-text"><span>Click to upload</span> or drag and drop</div>
+            <div class="upload-text">Amazon tax report CSV</div>
+          </label>
+          <input type="file" id="pst_file" name="csv_file" accept=".csv"
+                 onchange="document.getElementById('pst-fn').textContent = this.files[0]?.name || ''"/>
+          <div class="filename-display" id="pst-fn">{% if pst_result %}{{ pst_result.filename }}{% endif %}</div>
+        </div>
+        <button type="submit">Calculate PST</button>
+      </form>
+
+      {% if pst_error %}<div class="error">{{ pst_error }}</div>{% endif %}
+
+      {% if pst_result %}
+      <div class="result">
+        <h2>Results — {{ pst_result.filename }}</h2>
+        <div class="result-grid">
+          <div class="result-row">
+            <span class="result-label">Period</span>
+            <span class="result-value">{{ pst_result.period }}</span>
+          </div>
+          <div class="result-row">
+            <span class="result-label">Quarter</span>
+            <span class="result-value"><span class="badge">Q{{ pst_result.quarter }} {{ pst_result.year }}</span></span>
+          </div>
+          <div class="result-row highlight">
+            <span class="result-label">Total Sales (excl. tax)</span>
+            <span class="result-value money">CAD {{ "{:,.2f}".format(pst_result.sales) }}</span>
+          </div>
+          <div class="result-row highlight">
+            <span class="result-label">PST Collectable</span>
+            <span class="result-value money">CAD {{ "{:,.2f}".format(pst_result.pst) }}</span>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- GST Panel -->
+    <div class="tab-panel {% if gst_result or gst_error %}active{% endif %}" id="panel-gst">
+      <p class="subtitle">Quarters: Q1 Jan–Mar &nbsp;|&nbsp; Q2 Apr–Jun &nbsp;|&nbsp; Q3 Jul–Sep &nbsp;|&nbsp; Q4 Oct–Dec</p>
+      <form method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="calc_type" value="gst"/>
+        <div class="upload-area" onclick="document.getElementById('gst_file').click()">
+          <label>
+            <div class="upload-icon">📂</div>
+            <div class="upload-text"><span>Click to upload</span> or drag and drop</div>
+            <div class="upload-text">Amazon tax report CSV</div>
+          </label>
+          <input type="file" id="gst_file" name="csv_file" accept=".csv"
+                 onchange="document.getElementById('gst-fn').textContent = this.files[0]?.name || ''"/>
+          <div class="filename-display" id="gst-fn">{% if gst_result %}{{ gst_result.filename }}{% endif %}</div>
+        </div>
+        <button type="submit">Calculate GST</button>
+      </form>
+
+      {% if gst_error %}<div class="error">{{ gst_error }}</div>{% endif %}
+
+      {% if gst_result %}
+      <div class="result">
+        <h2>Results — {{ gst_result.filename }}</h2>
+        <div class="result-grid">
+          <div class="result-row">
+            <span class="result-label">Period</span>
+            <span class="result-value">{{ gst_result.period }}</span>
+          </div>
+          <div class="result-row">
+            <span class="result-label">Quarter</span>
+            <span class="result-value"><span class="badge">Q{{ gst_result.quarter }} {{ gst_result.year }}</span></span>
+          </div>
+          <div class="result-row highlight">
+            <span class="result-label">Total Sales (excl. tax)</span>
+            <span class="result-value money">CAD {{ "{:,.2f}".format(gst_result.sales) }}</span>
+          </div>
+          <div class="result-row highlight">
+            <span class="result-label">GST / HST Collected</span>
+            <span class="result-value money">CAD {{ "{:,.2f}".format(gst_result.gst) }}</span>
+          </div>
+          {% if gst_result.qst > 0 %}
+          <div class="result-row highlight">
+            <span class="result-label">QST Collected</span>
+            <span class="result-value money">CAD {{ "{:,.2f}".format(gst_result.qst) }}</span>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
   </div>
+
+  <script>
+    function switchTab(name, btn) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('panel-' + name).classList.add('active');
+    }
+  </script>
 </body>
 </html>

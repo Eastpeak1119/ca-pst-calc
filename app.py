@@ -1,19 +1,28 @@
 from flask import Flask, request, render_template
 import pandas as pd
-import re
 
 app = Flask(__name__)
 
-# PST quarters: Q1=Mar-May(3-5), Q2=Jun-Aug(6-8), Q3=Sep-Nov(9-11), Q4=Dec-Feb(12-2)
-QUARTERS = {
+# PST quarters: Q1=Mar-May, Q2=Jun-Aug, Q3=Sep-Nov, Q4=Dec-Feb
+PST_QUARTERS = {
     1: (3, 5),
     2: (6, 8),
     3: (9, 11),
     4: (12, 2),
 }
 
-def month_to_quarter(month):
-    for q, (start, end) in QUARTERS.items():
+# GST quarters: standard calendar quarters
+GST_QUARTERS = {
+    1: (1, 3),
+    2: (4, 6),
+    3: (7, 9),
+    4: (10, 12),
+}
+
+MONTH_DAYS = {1:31, 2:28, 3:31, 4:30, 5:31, 6:30, 7:31, 8:31, 9:30, 10:31, 11:30, 12:31}
+
+def month_to_quarter(month, quarters):
+    for q, (start, end) in quarters.items():
         if start <= end:
             if start <= month <= end:
                 return q
@@ -22,75 +31,121 @@ def month_to_quarter(month):
                 return q
     return None
 
-def quarter_date_range(year, quarter):
-    start_month, end_month = QUARTERS[quarter]
-    if quarter == 4:  # Dec-Feb spans two years
-        start = f"{year}-12-01+00:00"
-        end = f"{year + 1}-02-28+00:00"
-    else:
-        end_day = 31 if end_month in (3, 5, 7, 8, 10, 12) else 30
+def quarter_date_range(year, quarter, quarters):
+    start_month, end_month = quarters[quarter]
+    if start_month > end_month:  # Q4 PST: Dec-Feb spans two years
         start = f"{year}-{start_month:02d}-01+00:00"
-        end = f"{year}-{end_month:02d}-{end_day}+00:00"
+        end = f"{year + 1}-{end_month:02d}-{MONTH_DAYS[end_month]:02d}+00:00"
+    else:
+        start = f"{year}-{start_month:02d}-01+00:00"
+        end = f"{year}-{end_month:02d}-{MONTH_DAYS[end_month]:02d}+00:00"
     return start, end
 
-def detect_year_quarter(df):
-    """Infer fiscal year and PST quarter from the shipment dates in the file."""
+def detect_year_quarter(df, quarters):
     dates = pd.to_datetime(df['Shipment_Date'].str.replace(r'\+.*', '', regex=True), errors='coerce').dropna()
     if dates.empty:
         return None, None
-    # Use the most common month to determine the quarter
-    months = dates.dt.month
-    dominant_month = months.mode()[0]
+    dominant_month = dates.dt.month.mode()[0]
     dominant_year = dates.dt.year.mode()[0]
-    quarter = month_to_quarter(dominant_month)
-    # For Q4 (Dec-Feb), fiscal year is the December year
-    if quarter == 4:
-        if dominant_month <= 2:
-            dominant_year -= 1  # Feb belongs to previous Dec's fiscal year
+    quarter = month_to_quarter(dominant_month, quarters)
+    # For PST Q4 (Dec-Feb), fiscal year is the December year
+    start_month = quarters[quarter][0]
+    if start_month > quarters[quarter][1] and dominant_month <= 2:
+        dominant_year -= 1
     return dominant_year, quarter
+
+def quarter_label(year, quarter, quarters):
+    start_month, end_month = quarters[quarter]
+    if start_month > end_month:
+        s = pd.Timestamp(year, start_month, 1).strftime('%b')
+        e = pd.Timestamp(year + 1, end_month, 1).strftime('%b')
+        return f"{s} {year} – {e} {year + 1}"
+    s = pd.Timestamp(year, start_month, 1).strftime('%b')
+    e = pd.Timestamp(year, end_month, 1).strftime('%b')
+    return f"{s} – {e} {year}"
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    result = None
-    error = None
+    pst_result = None
+    gst_result = None
+    pst_error = None
+    gst_error = None
 
     if request.method == 'POST':
+        calc_type = request.form.get('calc_type')
         file = request.files.get('csv_file')
+
         if not file or file.filename == '':
-            error = 'Please upload a CSV file.'
+            error_msg = 'Please upload a CSV file.'
+            if calc_type == 'pst':
+                pst_error = error_msg
+            else:
+                gst_error = error_msg
         else:
             try:
                 df = pd.read_csv(file, encoding='latin1')
 
-                year, quarter = detect_year_quarter(df)
-                if year is None:
-                    error = 'Could not detect dates from the file.'
-                else:
-                    start, end = quarter_date_range(year, quarter)
+                if calc_type == 'pst':
+                    year, quarter = detect_year_quarter(df, PST_QUARTERS)
+                    if year is None:
+                        pst_error = 'Could not detect dates from the file.'
+                    else:
+                        start, end = quarter_date_range(year, quarter, PST_QUARTERS)
+                        pst_total = df['Tax_Amount'][df['Tax_Type'] == 'Provincial Sales Tax (PST)'].sum()
+                        fil = df[
+                            (df['Shipment_Date'] >= start) &
+                            (df['Shipment_Date'] <= end) &
+                            (df['Tax_Type'] == 'GST/HST')
+                        ]
+                        sales = fil['TaxExclusive_Selling_Price'].sum()
+                        pst_result = {
+                            'year': year,
+                            'quarter': quarter,
+                            'period': quarter_label(year, quarter, PST_QUARTERS),
+                            'sales': round(sales, 2),
+                            'pst': round(pst_total, 2),
+                            'filename': file.filename,
+                        }
 
-                    pst_total = df['Tax_Amount'][df['Tax_Type'] == 'Provincial Sales Tax (PST)'].sum()
+                elif calc_type == 'gst':
+                    year, quarter = detect_year_quarter(df, GST_QUARTERS)
+                    if year is None:
+                        gst_error = 'Could not detect dates from the file.'
+                    else:
+                        start, end = quarter_date_range(year, quarter, GST_QUARTERS)
+                        fil = df[
+                            (df['Shipment_Date'] >= start) &
+                            (df['Shipment_Date'] <= end) &
+                            (df['Tax_Type'] == 'GST/HST')
+                        ]
+                        sales = fil['TaxExclusive_Selling_Price'].sum()
+                        gst = fil['Tax_Amount'].sum()
+                        qst_fil = df[
+                            (df['Shipment_Date'] >= start) &
+                            (df['Shipment_Date'] <= end) &
+                            (df['Tax_Type'] == 'Quebec Sales Tax (VAT)')
+                        ]
+                        qst = qst_fil['Tax_Amount'].sum()
+                        gst_result = {
+                            'year': year,
+                            'quarter': quarter,
+                            'period': quarter_label(year, quarter, GST_QUARTERS),
+                            'sales': round(sales, 2),
+                            'gst': round(gst, 2),
+                            'qst': round(qst, 2),
+                            'filename': file.filename,
+                        }
 
-                    fil = df[
-                        (df['Shipment_Date'] >= start) &
-                        (df['Shipment_Date'] <= end) &
-                        (df['Tax_Type'] == 'GST/HST')
-                    ]
-                    sales = fil['TaxExclusive_Selling_Price'].sum()
-
-                    start_month, end_month = QUARTERS[quarter]
-                    result = {
-                        'year': year,
-                        'quarter': quarter,
-                        'period': f"{'Dec' if quarter == 4 else pd.Timestamp(year, start_month, 1).strftime('%b')} – "
-                                  f"{'Feb' if quarter == 4 else pd.Timestamp(year, end_month, 1).strftime('%b')} {year if quarter != 4 else f'{year}/{year+1}'}",
-                        'sales': round(sales, 2),
-                        'pst': round(pst_total, 2),
-                        'filename': file.filename,
-                    }
             except Exception as e:
-                error = f'Error processing file: {str(e)}'
+                error_msg = f'Error processing file: {str(e)}'
+                if calc_type == 'pst':
+                    pst_error = error_msg
+                else:
+                    gst_error = error_msg
 
-    return render_template('index.html', result=result, error=error)
+    return render_template('index.html',
+                           pst_result=pst_result, pst_error=pst_error,
+                           gst_result=gst_result, gst_error=gst_error)
 
 if __name__ == '__main__':
     app.run(debug=True)
